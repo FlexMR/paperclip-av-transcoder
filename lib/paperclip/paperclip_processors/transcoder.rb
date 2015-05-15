@@ -53,6 +53,11 @@ module Paperclip
         @cli.add_destination(dst.path)
         @cli.reset_input_filters
 
+				if @auto_rotate && @meta[:rotate]
+	        @cli.filter_rotate @meta[:rotate]
+					@cli.add_output_param :'metadata:s:v:0', 'rotate=0'
+	      end
+
         if output_is_image?
           @time = @time.call(@meta, @options) if @time.respond_to?(:call)
           @cli.filter_seek @time
@@ -104,6 +109,125 @@ module Paperclip
     def output_is_image?
       !!@format.to_s.match(/jpe?g|png|gif$/)
     end
+
+		def format_geometry geometry
+			geometry.present? ? calculate_geometry : nil
+	  end
+
+		def calculate_geometry
+			keep_aspect     = !@geometry.nil? && @geometry[-1,1] != '!'
+	    pad_only        = keep_aspect    && @geometry[-1,1] == '#'
+	    enlarge_only    = keep_aspect    && @geometry[-1,1] == '<'
+	    shrink_only     = keep_aspect    && @geometry[-1,1] == '>'
+
+	    # Extract target dimensions
+	    if @geometry =~ /(\d*)x(\d*)/
+	      target_width = $1
+	      target_height = $2
+	    end
+
+			return nil unless @meta[:size].present?
+
+	    current_width, current_height = @meta[:size].split('x')
+
+	    if @auto_rotate && @meta[:rotate] && @meta[:rotate] && [90,180].include?(@meta[:rotate]) # calculate as if already rotated
+	      current_width, current_height = current_height, current_width
+	      @meta[:aspect] = (1.to_f / @meta[:aspect])
+	    end
+
+	    # Current width and height
+	    if keep_aspect
+	      if target_width.blank? # fixed height
+	        calculate_fixed_height(target_height, @meta[:aspect])
+	      elsif target_height.blank? # fixed width
+					calculate_fixed_width(target_width, @meta[:aspect])
+	      elsif enlarge_only
+	        calculate_enlarge_only(current_width, current_height, target_width, target_height, @meta[:aspect])
+	      elsif shrink_only
+					calculate_shrink_only(current_width, current_height, target_width, target_height, @meta[:aspect])
+	      elsif pad_only
+	        calculate_pad_only(target_width, target_height, @meta[:aspect])
+	      else
+	        # Keep aspect ratio
+	        calculate_scale_only(current_width, current_height, target_width, target_height, @meta[:aspect])
+	      end
+	    else
+	      # Do not keep aspect ratio
+	      "#{target_width.to_i/2*2}x#{target_height.to_i/2*2}"
+	    end
+		end
+
+		def calculate_fixed_height(target_height, aspect)
+			height = target_height.to_i
+	    width = (height.to_f * aspect.to_f).to_i
+	    "#{width.to_i/2*2}x#{height}"
+		end
+
+		def calculate_fixed_width(target_width, aspect)
+			width = target_width.to_i
+	    height = (width.to_f / aspect.to_f).to_i
+	    "#{width}x#{height.to_i/2*2}"
+		end
+
+		def calculate_enlarge_only(current_width, current_height, target_width, target_height, aspect)
+			if current_width.to_i < target_width.to_i
+	      # Keep aspect ratio
+	      width = target_width.to_i
+	      height = (width.to_f / aspect.to_f).to_i
+	      "#{width.to_i/2*2}x#{height.to_i/2*2}"
+	    else
+	      #Source is Larger than Destination, Doing Nothing
+	      #return nil
+	    end
+		end
+
+		def calculate_shrink_only(current_width, current_height, target_width, target_height, aspect)
+			if current_width.to_i > target_width.to_i
+	      # Keep aspect ratio
+
+	      if (target_width.to_f / current_width.to_i) > (target_height.to_f / current_height.to_i)
+	        height = target_height.to_i
+	        width = (height.to_f * @meta[:aspect].to_f).to_i
+	      else
+	        width = target_width.to_i
+	        height = (width.to_f / (@meta[:aspect].to_f)).to_i
+	      end
+	      "#{width.to_i/2*2}x#{height.to_i/2*2}"
+	    elsif current_height.to_i > target_height.to_i
+	      height = target_height.to_i
+	      width = (height.to_f * @meta[:aspect].to_f).to_i
+	      "#{width.to_i/2*2}x#{height.to_i/2*2}"
+	    else
+	      #return nil
+	    end
+		end
+
+		def calculate_pad_only(target_width, target_height, aspect)
+			# Keep aspect ratio
+	    width = target_width.to_i
+	    height = (width.to_f / aspect.to_f).to_i
+	    # We should add half the delta as a padding offset Y
+	    pad_y = (target_height.to_f - height.to_f) / 2
+	    # There could be options already set
+	    @convert_options[:output][:vf][/\A/] = ',' if @convert_options[:output][:vf]
+	    @convert_options[:output][:vf] ||= ''
+	    if pad_y > 0
+	      @convert_options[:output][:vf][/\A/] = "scale=#{width}:-1,pad=#{width.to_i}:#{target_height.to_i}:0:#{pad_y}:#{@pad_color}"
+	    else
+	      @convert_options[:output][:vf][/\A/] = "scale=#{width}:-1,crop=#{width.to_i}:#{height.to_i}"
+	    end
+		end
+
+		def calculate_scale_only(current_width, current_height, target_width, target_height, aspect)
+			if (target_height.to_f / current_height.to_f) < (target_width.to_f / current_width.to_f)
+	      height = target_height.to_i
+	      width = (height.to_f * aspect.to_f).to_i
+	    else
+	      width = target_width.to_i
+	      height = (width.to_f / aspect.to_f).to_i
+	    end
+	    "#{width.to_i/2*2}x#{height.to_i/2*2}"
+		end
   end
 
   class Attachment
