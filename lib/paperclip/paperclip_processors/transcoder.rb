@@ -55,7 +55,7 @@ module Paperclip
 
 				if @auto_rotate && @meta[:rotate]
 	        @cli.filter_rotate @meta[:rotate]
-					@cli.add_output_param :'metadata:s:v:0', 'rotate=0'
+					@cli.metadata_rotate 0
 	      end
 
         if output_is_image?
