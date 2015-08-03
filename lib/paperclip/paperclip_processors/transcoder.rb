@@ -54,7 +54,7 @@ module Paperclip
         @cli.reset_input_filters
 
 				if @auto_rotate && @meta[:rotate]
-	        @cli.filter_rotate @meta[:rotate]
+	        # actual rotation no longer needed since ffmpeg will handle this automatically
 					@cli.metadata_rotate 0
 	      end
 
